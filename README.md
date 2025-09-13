@@ -13,5 +13,12 @@ cargo install --git https://github.com/Relacibo/rondafk.git
 # Usage
 
 ```console
-rondafk /file/to/format.ron
+Usage: rondafk [OPTIONS] [FILES]...
+
+Arguments:
+  [FILES]...  Read one or multiple files
+
+Options:
+      --stdin  Read from stdin
+  -h, --help   Print help
 ```
