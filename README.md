@@ -7,7 +7,7 @@ A simple formatter for [ron](https://github.com/ron-rs/ron).
 # Install
 
 ```bash
-cargo install --git https://github.com/Relacibo/rondafk.git
+cargo install rondafk
 ```
 
 # Usage

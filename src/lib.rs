@@ -226,55 +226,51 @@ fn space_helpers() {
 fn ws_inner(
     f: &mut Formatter,
     ws: &Ws,
-    Context { indent, nl }: Context,
-    space: &mut &str,
-) -> fmt::Result {
-    match ws {
+    c_after: Context,
+    is_standalone: bool,
+) -> Result<bool, fmt::Error> {
+    let Context {
+        indent: indent_after,
+        nl: nl_after,
+    } = c_after;
+    #[allow(clippy::obfuscated_if_else)]
+    let space = (!is_standalone).then_some(" ").unwrap_or_default();
+    let res = match ws {
         Ws::LineComment(c) => {
             write!(
                 f,
-                "{space}//{}{nl}{indent}",
+                "{space}//{}{nl_after}{indent_after}",
                 start_with_space(without_trailing_nl(c))
             )?;
-            *space = "";
+            true
         }
-        Ws::Space(_) => {}
         Ws::BlockComment(c) => {
             write!(f, "{space}/*{}*/", delimited_with_spaces(c))?;
-            *space = " ";
+            false
         }
-    }
-    Ok(())
+        Ws::Space(_) => is_standalone,
+    };
+    Ok(res)
 }
 
 fn ws_min<'a>(Whitespace(ws): &'a Whitespace, c: Context) -> impl Display + 'a {
     Disp(move |f| {
-        let mut space = " ";
-        ws.iter().try_for_each(|ws| ws_inner(f, ws, c, &mut space))
+        ws.iter()
+            .try_fold(false, |is_standalone, ws| ws_inner(f, ws, c, is_standalone))?;
+        Ok(())
     })
 }
 fn ws_single<'a>(Whitespace(ws): &'a Whitespace, c: Context) -> impl Display + 'a {
     Disp(move |f| {
-        let mut space = " ";
-        ws.iter()
-            .try_for_each(|ws| ws_inner(f, ws, c, &mut space))?;
-        write!(f, "{space}")
+        let is_standalone = ws
+            .iter()
+            .try_fold(false, |is_standalone, ws| ws_inner(f, ws, c, is_standalone))?;
+        if is_standalone {
+            write!(f, " ")?;
+        }
+        Ok(())
     })
 }
-// fn ws_nl<'a>(
-//     Whitespace(ws): &'a Whitespace,
-//     c @ Context { indent, nl }: Context,
-// ) -> impl Display + 'a {
-//     Disp(move |f| {
-//         let mut space = " ";
-//         ws.iter()
-//             .try_for_each(|ws| ws_inner(f, ws, c, &mut space))?;
-//         if !space.is_empty() {
-//             write!(f, "{nl}{indent}")?;
-//         }
-//         Ok(())
-//     })
-// }
 
 fn ws_nl<'a>(
     Whitespace(ws): &'a Whitespace,
@@ -285,29 +281,30 @@ fn ws_nl<'a>(
     }: Context,
 ) -> impl Display + 'a {
     Disp(move |f| {
-        let mut space = " ";
-        // Preserve, whether comment is standalone or preceded by non whitespace
-        if let &[Ws::Space(ws0), ref rest @ ..] = &ws[..] {
-            if ws0.contains("\n")
-                && rest
-                    .iter()
-                    .any(|ws| ws.is_comment() || ws.is_line_comment())
-            {
-                write!(f, "{nl}{indent}")?;
-                space = "";
+        let mut is_standalone = false;
+        let mut had_newline = false;
+        for (i, elem) in ws.iter().enumerate() {
+            // Preserve, whether comment is standalone or preceded by non whitespace
+            match elem {
+                Ws::Space(s) if !had_newline => {
+                    if s.contains("\n") {
+                        had_newline = true;
+                    }
+                }
+                Ws::LineComment(_) | Ws::BlockComment(_) => {
+                    if had_newline && !is_standalone {
+                        write!(f, "{nl}{indent}")?;
+                        is_standalone = true;
+                    }
+                    let c = if i == ws.len() - 1 { c_after } else { c };
+                    is_standalone = ws_inner(f, elem, c, is_standalone)?;
+                    had_newline = false;
+                }
+                _ => {}
             }
         }
-        let without_spaces: Vec<_> = ws.iter().filter(|ws| !matches!(ws, Ws::Space(_))).collect();
 
-        // Try to keep the intendation for the comments at the right level
-        // while also giving the subsequent line the original identation
-        if let [start @ .., last] = &without_spaces[..] {
-            start
-                .iter()
-                .try_for_each(|ws| ws_inner(f, ws, c, &mut space))?;
-            ws_inner(f, last, c_after, &mut space)?;
-        }
-        if !space.is_empty() {
+        if !is_standalone {
             write!(f, "{nl_after}{indent_after}")?;
         }
         Ok(())
