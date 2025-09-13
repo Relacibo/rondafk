@@ -66,12 +66,6 @@ checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
 [[package]]
 name = "base64"
-version = "0.21.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
-
-[[package]]
-name = "base64"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
@@ -331,18 +325,6 @@ dependencies = [
 
 [[package]]
 name = "ron"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b91f7eff05f748767f183df4320a63d6936e9c6107d97c9e6bdd9784f4289c94"
-dependencies = [
- "base64 0.21.7",
- "bitflags 2.9.4",
- "serde",
- "serde_derive",
-]
-
-[[package]]
-name = "ron"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db09040cc89e461f1a265139777a2bde7f8d8c67c4936f700c63ce3e2904d468"
@@ -351,21 +333,6 @@ dependencies = [
  "bitflags 2.9.4",
  "serde",
  "serde_derive",
- "unicode-ident",
-]
-
-[[package]]
-name = "ron-edit"
-version = "0.2.0"
-dependencies = [
- "const_format",
- "derive_more",
- "include_dir",
- "insta",
- "macro_rules_attribute",
- "nom",
- "ron 0.8.1",
- "serde",
  "unicode-ident",
 ]
 
@@ -392,7 +359,7 @@ dependencies = [
  "include_dir",
  "insta",
  "ron 0.11.0",
- "ron-edit 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ron-edit",
  "serde",
 ]
 
