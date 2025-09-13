@@ -32,7 +32,7 @@ pub fn format(
         )
     }
     .expect("neither <String as fmt::Write> nor ron_edit's Display implementations error");
-    write!(buf, "{}", ws_nl(trailing_ws, c))
+    write!(buf, "{}", ws_nl(trailing_ws, c, c))
         .expect("neither <String as fmt::Write> nor ron_edit's Display implementations error");
     out
 }
@@ -79,7 +79,9 @@ fn value<'a>(it: &'a Value, c @ Context { nl, .. }: Context) -> impl Display + '
                 format!("{s}").replace("\n", "\n\r")
             }
         ),
-        Value::List(List(list)) => write!(f, "[{}]", separated_split(list, &crate::value, c)),
+        Value::List(List(list)) => {
+            write!(f, "[{}]", separated_split(list, &crate::value, c))
+        }
         Value::Map(Map(fields)) => {
             write!(
                 f,
@@ -224,51 +226,86 @@ fn space_helpers() {
 fn ws_inner(
     f: &mut Formatter,
     ws: &Ws,
-    Context { indent, nl }: Context,
-    space: &mut &str,
-) -> fmt::Result {
-    match ws {
+    c_after: Context,
+    is_standalone: bool,
+) -> Result<bool, fmt::Error> {
+    let Context {
+        indent: indent_after,
+        nl: nl_after,
+    } = c_after;
+    #[allow(clippy::obfuscated_if_else)]
+    let space = (!is_standalone).then_some(" ").unwrap_or_default();
+    let res = match ws {
         Ws::LineComment(c) => {
             write!(
                 f,
-                "{space}//{}{nl}{indent}",
+                "{space}//{}{nl_after}{indent_after}",
                 start_with_space(without_trailing_nl(c))
             )?;
-            *space = "";
+            true
         }
-        Ws::Space(_) => {}
         Ws::BlockComment(c) => {
             write!(f, "{space}/*{}*/", delimited_with_spaces(c))?;
-            *space = " ";
+            false
         }
-    }
-    Ok(())
+        Ws::Space(_) => is_standalone,
+    };
+    Ok(res)
 }
 
 fn ws_min<'a>(Whitespace(ws): &'a Whitespace, c: Context) -> impl Display + 'a {
     Disp(move |f| {
-        let mut space = " ";
-        ws.iter().try_for_each(|ws| ws_inner(f, ws, c, &mut space))
+        ws.iter()
+            .try_fold(false, |is_standalone, ws| ws_inner(f, ws, c, is_standalone))?;
+        Ok(())
     })
 }
 fn ws_single<'a>(Whitespace(ws): &'a Whitespace, c: Context) -> impl Display + 'a {
     Disp(move |f| {
-        let mut space = " ";
-        ws.iter()
-            .try_for_each(|ws| ws_inner(f, ws, c, &mut space))?;
-        write!(f, "{space}")
+        let is_standalone = ws
+            .iter()
+            .try_fold(false, |is_standalone, ws| ws_inner(f, ws, c, is_standalone))?;
+        if is_standalone {
+            write!(f, " ")?;
+        }
+        Ok(())
     })
 }
+
 fn ws_nl<'a>(
     Whitespace(ws): &'a Whitespace,
     c @ Context { indent, nl }: Context,
+    c_after @ Context {
+        indent: indent_after,
+        nl: nl_after,
+    }: Context,
 ) -> impl Display + 'a {
     Disp(move |f| {
-        let mut space = " ";
-        ws.iter()
-            .try_for_each(|ws| ws_inner(f, ws, c, &mut space))?;
-        if !space.is_empty() {
-            write!(f, "{nl}{indent}")?;
+        let mut is_standalone = false;
+        let mut had_newline = false;
+        for (i, elem) in ws.iter().enumerate() {
+            // Preserve, whether comment is standalone or preceded by non whitespace
+            match elem {
+                Ws::Space(s) if !had_newline => {
+                    if s.contains("\n") {
+                        had_newline = true;
+                    }
+                }
+                Ws::LineComment(_) | Ws::BlockComment(_) => {
+                    if had_newline && !is_standalone {
+                        write!(f, "{nl}{indent}")?;
+                        is_standalone = true;
+                    }
+                    let c = if i == ws.len() - 1 { c_after } else { c };
+                    is_standalone = ws_inner(f, elem, c, is_standalone)?;
+                    had_newline = false;
+                }
+                _ => {}
+            }
+        }
+
+        if !is_standalone {
+            write!(f, "{nl_after}{indent_after}")?;
         }
         Ok(())
     })
@@ -325,7 +362,7 @@ fn ws_wrapped_leading_nl<'a, T, D: Display>(
         write!(
             f,
             "{}{}{}",
-            ws_nl(leading, c),
+            ws_nl(leading, c, c),
             format_content(content, c),
             ws_min(following, c)
         )
@@ -365,10 +402,11 @@ fn separated_split<'a, T, D: Display>(
     c: Context,
 ) -> impl Display + 'a {
     Disp(move |f| {
+        let increased = c.increase();
         values
             .iter()
-            .try_for_each(|i| write!(f, "{},", ws_wrapped_leading_nl(i, c.increase(), item)))?;
-        write!(f, "{}", ws_nl(trailing_ws, c))
+            .try_for_each(|i| write!(f, "{},", ws_wrapped_leading_nl(i, increased, item)))?;
+        write!(f, "{}", ws_nl(trailing_ws, increased, c))
     })
 }
 
@@ -398,7 +436,7 @@ fn ws_lead_nl<'a, T, D: Display>(
     c: Context,
     format_content: &'a impl Fn(&'a T, Context) -> D,
 ) -> impl Display + 'a {
-    Disp(move |f| write!(f, "{}{}", ws_nl(leading, c), format_content(content, c)))
+    Disp(move |f| write!(f, "{}{}", ws_nl(leading, c, c), format_content(content, c)))
 }
 fn option<'a, T, D: Display>(
     opt: &'a Option<T>,
