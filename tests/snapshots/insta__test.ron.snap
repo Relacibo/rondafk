@@ -3,11 +3,12 @@ source: tests/insta.rs
 expression: ron
 ---
 # // a comment
-![enable(unwrap_newtypes, implicit_some)] // Line Comment
-/* block */ /* Block Comment /* Nested Block Comment */ */
+![enable(unwrap_newtypes, implicit_some)]
+// Line Comment
+/* block */
+/* Block Comment /* Nested Block Comment */ */
 (
-    value: "hello" // comment
-    ,
+    value: "hello", // comment
     something_else /* */: "hi",
     array: [
         "hello", /* jo */
