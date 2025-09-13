@@ -32,7 +32,7 @@ pub fn format(
         )
     }
     .expect("neither <String as fmt::Write> nor ron_edit's Display implementations error");
-    write!(buf, "{}", ws_nl(trailing_ws, c))
+    write!(buf, "{}", ws_nl(trailing_ws, c, c))
         .expect("neither <String as fmt::Write> nor ron_edit's Display implementations error");
     out
 }
@@ -79,7 +79,9 @@ fn value<'a>(it: &'a Value, c @ Context { nl, .. }: Context) -> impl Display + '
                 format!("{s}").replace("\n", "\n\r")
             }
         ),
-        Value::List(List(list)) => write!(f, "[{}]", separated_split(list, &crate::value, c)),
+        Value::List(List(list)) => {
+            write!(f, "[{}]", separated_split(list, &crate::value, c))
+        }
         Value::Map(Map(fields)) => {
             write!(
                 f,
@@ -259,16 +261,54 @@ fn ws_single<'a>(Whitespace(ws): &'a Whitespace, c: Context) -> impl Display + '
         write!(f, "{space}")
     })
 }
+// fn ws_nl<'a>(
+//     Whitespace(ws): &'a Whitespace,
+//     c @ Context { indent, nl }: Context,
+// ) -> impl Display + 'a {
+//     Disp(move |f| {
+//         let mut space = " ";
+//         ws.iter()
+//             .try_for_each(|ws| ws_inner(f, ws, c, &mut space))?;
+//         if !space.is_empty() {
+//             write!(f, "{nl}{indent}")?;
+//         }
+//         Ok(())
+//     })
+// }
+
 fn ws_nl<'a>(
     Whitespace(ws): &'a Whitespace,
     c @ Context { indent, nl }: Context,
+    c_after @ Context {
+        indent: indent_after,
+        nl: nl_after,
+    }: Context,
 ) -> impl Display + 'a {
     Disp(move |f| {
         let mut space = " ";
-        ws.iter()
-            .try_for_each(|ws| ws_inner(f, ws, c, &mut space))?;
+        // Preserve, whether comment is standalone or preceded by non whitespace
+        if let &[Ws::Space(ws0), ref rest @ ..] = &ws[..] {
+            if ws0.contains("\n")
+                && rest
+                    .iter()
+                    .any(|ws| ws.is_comment() || ws.is_line_comment())
+            {
+                write!(f, "{nl}{indent}")?;
+                space = "";
+            }
+        }
+        let without_spaces: Vec<_> = ws.iter().filter(|ws| !matches!(ws, Ws::Space(_))).collect();
+
+        // Try to keep the intendation for the comments at the right level
+        // while also giving the subsequent line the original identation
+        if let [start @ .., last] = &without_spaces[..] {
+            start
+                .iter()
+                .try_for_each(|ws| ws_inner(f, ws, c, &mut space))?;
+            ws_inner(f, last, c_after, &mut space)?;
+        }
         if !space.is_empty() {
-            write!(f, "{nl}{indent}")?;
+            write!(f, "{nl_after}{indent_after}")?;
         }
         Ok(())
     })
@@ -325,7 +365,7 @@ fn ws_wrapped_leading_nl<'a, T, D: Display>(
         write!(
             f,
             "{}{}{}",
-            ws_nl(leading, c),
+            ws_nl(leading, c, c),
             format_content(content, c),
             ws_min(following, c)
         )
@@ -365,10 +405,11 @@ fn separated_split<'a, T, D: Display>(
     c: Context,
 ) -> impl Display + 'a {
     Disp(move |f| {
+        let increased = c.increase();
         values
             .iter()
-            .try_for_each(|i| write!(f, "{},", ws_wrapped_leading_nl(i, c.increase(), item)))?;
-        write!(f, "{}", ws_nl(trailing_ws, c))
+            .try_for_each(|i| write!(f, "{},", ws_wrapped_leading_nl(i, increased, item)))?;
+        write!(f, "{}", ws_nl(trailing_ws, increased, c))
     })
 }
 
@@ -398,7 +439,7 @@ fn ws_lead_nl<'a, T, D: Display>(
     c: Context,
     format_content: &'a impl Fn(&'a T, Context) -> D,
 ) -> impl Display + 'a {
-    Disp(move |f| write!(f, "{}{}", ws_nl(leading, c), format_content(content, c)))
+    Disp(move |f| write!(f, "{}{}", ws_nl(leading, c, c), format_content(content, c)))
 }
 fn option<'a, T, D: Display>(
     opt: &'a Option<T>,

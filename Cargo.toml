@@ -1,14 +1,16 @@
 [package]
-name = "ronda"
-version = "0.2.0"
-edition = "2021"
+name = "rondafk"
+version = "0.2.1"
+edition = "2024"
 categories = ["command-line-utilities", "development-tools", "value-formatting"]
 description = "A simple ron formatter"
 keywords = ["RON", "autoformatting", "beautify", "pretty-print"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/ModProg/ronda"
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+repository = "https://github.com/Relacibo/rondafk"
+
+[workspace]
+members = ["crates/*"]
 
 [lib]
 
@@ -16,9 +18,7 @@ repository = "https://github.com/ModProg/ronda"
 anyhow = "1.0.75"
 clap = { version = "4.1.8", features = ["derive"] }
 derive_more = "0.99.17"
-include_dir = "0.7.3"
 ron-edit = "0.2.0"
-# ron-edit = {path = "../ron-edit/"}
 
 [package.metadata.docs.rs]
 all-features = true
@@ -27,7 +27,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dev-dependencies]
 include_dir = "0.7.3"
 insta = { version = "1.28.0", features = ["ron"] }
-ron = "0.8.0"
+ron = "0.11.0"
 serde = { version = "1.0.154", features = ["derive"] }
 
 

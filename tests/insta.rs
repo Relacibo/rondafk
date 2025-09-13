@@ -18,7 +18,7 @@ fn format() {
 
         let before: ron::Value = ron::de::from_str(contents).unwrap();
 
-        let ron = ronda::format(&ron);
+        let ron = rondafk::format(&ron);
 
         println!("{ron}");
         let after: ron::Value = ron::de::from_str(&ron).unwrap();
