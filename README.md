@@ -2,7 +2,7 @@
 
 Low effort fork of [ronda](https://github.com/ModProg/ronda), that tries to fix formatting comments.
 
-A simple formatter for [`ron`](https://github.com/ron-rs/ron).
+A simple formatter for [ron](https://github.com/ron-rs/ron).
 
 # Install
 
