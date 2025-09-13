@@ -6,13 +6,13 @@ A simple formatter for [ron](https://github.com/ron-rs/ron).
 
 # Install
 
-```console
+```bash
 cargo install --git https://github.com/Relacibo/rondafk.git
 ```
 
 # Usage
 
-```console
+```bash
 Usage: rondafk [OPTIONS] [FILES]...
 
 Arguments:
