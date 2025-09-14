@@ -228,18 +228,16 @@ fn ws_inner(
     ws: &Ws,
     c_after: Context,
     is_standalone: bool,
-    allow_trailing_newline: bool,
 ) -> Result<bool, fmt::Error> {
     let Context {
         indent: indent_after,
         nl: nl_after,
     } = c_after;
-    #[allow(clippy::obfuscated_if_else)]
-    let space = (!is_standalone).then_some(" ").unwrap_or_default();
-    #[allow(clippy::obfuscated_if_else)]
-    let (indent_after, nl_after) = allow_trailing_newline
-        .then_some((indent_after, nl_after))
-        .unwrap_or_default();
+    let space = if !is_standalone {
+        " "
+    } else {
+        Default::default()
+    };
     let res = match ws {
         Ws::LineComment(c) => {
             write!(
@@ -247,7 +245,7 @@ fn ws_inner(
                 "{space}//{}{nl_after}{indent_after}",
                 start_with_space(without_trailing_nl(c))
             )?;
-            allow_trailing_newline
+            true
         }
         Ws::BlockComment(c) => {
             write!(f, "{space}/*{}*/", delimited_with_spaces(c))?;
@@ -297,12 +295,12 @@ fn ws_general<'a>(
                         write!(f, "{nl}{indent}")?;
                         is_standalone = true;
                     }
-                    let (c, allow_trailing_nl) = if i == after_last_elem_position - 1 {
-                        (c_after, add_trailing_nl)
+                    let c = if i == after_last_elem_position - 1 {
+                        c_after
                     } else {
-                        (c, true)
+                        c
                     };
-                    is_standalone = ws_inner(f, elem, c, is_standalone, allow_trailing_nl)?;
+                    is_standalone = ws_inner(f, elem, c, is_standalone)?;
                     observed_newline = false;
                 }
                 _ => {}
@@ -320,64 +318,6 @@ fn ws_general<'a>(
     })
 }
 
-fn ws_wrapped_min<'a, T, D: Display>(
-    WsWrapped {
-        leading,
-        content,
-        following,
-    }: &'a WsWrapped<T>,
-    c: Context,
-    format_content: &'a impl Fn(&'a T, Context) -> D,
-) -> impl Display + 'a {
-    Disp(move |f| {
-        write!(
-            f,
-            "{}{}{}",
-            ws_min(leading, c),
-            format_content(content, c),
-            ws_min(following, c)
-        )
-    })
-}
-fn ws_wrapped_leading_single<'a, T, D: Display>(
-    WsWrapped {
-        leading,
-        content,
-        following,
-    }: &'a WsWrapped<T>,
-    c: Context,
-    format_content: &'a impl Fn(&'a T, Context) -> D,
-) -> impl Display + 'a {
-    Disp(move |f| {
-        write!(
-            f,
-            "{}{}{}",
-            ws_single(leading, c),
-            format_content(content, c),
-            ws_min(following, c)
-        )
-    })
-}
-fn ws_wrapped_leading_nl<'a, T, D: Display>(
-    WsWrapped {
-        leading,
-        content,
-        following,
-    }: &'a WsWrapped<T>,
-    c: Context,
-    format_content: impl Fn(&'a T, Context) -> D + 'a,
-) -> impl Display + 'a {
-    Disp(move |f| {
-        write!(
-            f,
-            "{}{},{}",
-            ws_general(leading, c, c, true, false),
-            format_content(content, c),
-            ws_min(following, c)
-        )
-    })
-}
-
 fn separated_min<'a, T, D: Display>(
     Separated {
         values,
@@ -388,19 +328,21 @@ fn separated_min<'a, T, D: Display>(
     item: &'a impl Fn(&'a T, Context) -> D,
 ) -> impl Display + 'a {
     Disp(move |f| {
-        if let Some((first, rest)) = values.split_first() {
-            write!(f, "{}", ws_wrapped_min(first, c, item))?;
-            if let Some((last, rest)) = rest.split_last() {
-                write!(f, ",")?;
-                rest.iter()
-                    .try_for_each(|i| write!(f, "{},", ws_wrapped_leading_single(i, c, item)))?;
-                write!(f, "{}", ws_wrapped_leading_single(last, c, item))?;
-            }
-            if !rest.is_empty() {}
+        for (i, elem) in values.iter().enumerate() {
+            let pad_end_with_space = i != 0;
+            // write!(f, ",")?;
+            write!(
+                f,
+                "{}{},{}",
+                ws_general(&elem.leading, c, c, false, pad_end_with_space),
+                item(&elem.content, c),
+                ws_min(&elem.following, c)
+            )?;
         }
         write!(f, "{}", ws_min(trailing_ws, c))
     })
 }
+
 fn separated_split<'a, T, D: Display>(
     Separated {
         values,
@@ -412,9 +354,15 @@ fn separated_split<'a, T, D: Display>(
 ) -> impl Display + 'a {
     Disp(move |f| {
         let increased = c.increase();
-        values
-            .iter()
-            .try_for_each(|i| write!(f, "{}", ws_wrapped_leading_nl(i, increased, item)))?;
+        for elem in values {
+            write!(
+                f,
+                "{}{},{}",
+                ws_general(&elem.leading, c, c, true, false),
+                item(&elem.content, c),
+                ws_min(&elem.following, c)
+            )?;
+        }
         write!(f, "{}", ws_general(trailing_ws, increased, c, true, false))
     })
 }
