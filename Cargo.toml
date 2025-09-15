@@ -1,6 +1,6 @@
 [package]
 name = "rondafk"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2024"
 categories = ["command-line-utilities", "development-tools", "value-formatting"]
 description = "A simple ron formatter"
