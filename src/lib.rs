@@ -102,7 +102,7 @@ fn format_value<'a>(it: &'a Value, c @ Context { nl, .. }: Context) -> impl Disp
             option(f, ident, |ident| ws_followed_min(ident, c, &|s, _| s))?;
             write!(f, "(")?;
             format_separated(f, fields, c, &format_named_field, false)?;
-            write!(f, "(")
+            write!(f, ")")
         }
     })
 }
