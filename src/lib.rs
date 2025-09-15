@@ -265,17 +265,17 @@ fn format_ws_min(
     format_ws(f, ws, c, c, false, false, false)
 }
 
-fn format_ws_single<'a>(
+fn format_ws_single(
     f: &mut impl Write,
-    ws: &'a Whitespace<'_>,
+    ws: &Whitespace<'_>,
     c: Context,
 ) -> Result<bool, fmt::Error> {
     format_ws(f, ws, c, c, false, false, true)
 }
 
-fn format_ws<'a>(
+fn format_ws(
     f: &mut impl Write,
-    Whitespace(ws): &'a Whitespace,
+    Whitespace(ws): &Whitespace,
     c @ Context { indent, nl }: Context,
     c_after @ Context {
         indent: indent_after,
