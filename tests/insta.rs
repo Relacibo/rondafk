@@ -14,13 +14,14 @@ fn ensure_valid_ron() {
 fn format() {
     for file in INPUTS.entries() {
         let contents = file.as_file().unwrap().contents_utf8().unwrap();
-        let ron: File = contents.try_into().map_err(|e| eprintln!("{e}")).unwrap();
+        let ron_file: File = contents.try_into().map_err(|e| eprintln!("{e}")).unwrap();
 
         let before: ron::Value = ron::de::from_str(contents).unwrap();
 
-        let ron = rondafk::format(&ron);
+        let mut ron = String::new();
+        rondafk::format(&mut ron, &ron_file).unwrap();
+        print!("{ron}");
 
-        println!("{ron}");
         let after: ron::Value = ron::de::from_str(&ron).unwrap();
 
         assert_eq!(before, after);

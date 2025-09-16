@@ -22,14 +22,22 @@ fn main() -> Result<()> {
             let ron = fs::read_to_string(file)?;
             let ron = File::try_from(ron.as_str())
                 .map_err(|err| anyhow!("Error while reading `{}`: {err}", file.display()))?;
-            fs::write(file, rondafk::format(&ron))?;
+            let mut ret = String::new();
+            if let Err(err) = rondafk::format(&mut ret, &ron) {
+                eprintln!("Formatting error: {err}")
+            };
+            print!("{ret}");
         }
     }
     if stdin {
         let mut ron = String::new();
         io::stdin().read_to_string(&mut ron)?;
         let ron = File::try_from(ron.as_str()).map_err(Error::msg)?;
-        print!("{}", rondafk::format(&ron));
+        let mut ret = String::new();
+        if let Err(err) = rondafk::format(&mut ret, &ron) {
+            eprintln!("Formatting error: {err}")
+        };
+        print!("{ret}");
     }
 
     Ok(())

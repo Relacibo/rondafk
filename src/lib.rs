@@ -2,16 +2,14 @@ use std::fmt::{self, Debug, Display, Formatter, Write};
 
 use ron_edit::*;
 
-#[must_use]
 pub fn format(
+    f: &mut impl Write,
     File {
         extentions,
         value,
         trailing_ws,
     }: &File,
-) -> String {
-    let mut out = String::new();
-    let buf = &mut out;
+) -> Result<(), Error> {
     let c = Context {
         indent: Indent(0),
         nl: "\n",
@@ -19,25 +17,15 @@ pub fn format(
 
     extentions
         .iter()
-        .try_for_each(|e| write!(buf, "{}", extention(e, c)))
-        .inspect_err(|err| eprintln!("{err}"))
-        .ok();
+        .try_for_each(|e| write!(f, "{}", extention(e, c)))?;
     if extentions.is_empty() {
-        ws_lead_min(buf, value, c, &format_value)
-            .inspect_err(|err| eprintln!("{err}"))
-            .ok();
+        ws_lead_min(f, value, c, &format_value)?;
     } else {
-        ws_lead_nl(buf, value, c, &format_value)
-            .inspect_err(|err| eprintln!("{err}"))
-            .ok();
-        format_ws_min(buf, trailing_ws, c)
-            .inspect_err(|err| eprintln!("{err}"))
-            .ok();
+        ws_lead_nl(f, value, c, &format_value)?;
+        format_ws_min(f, trailing_ws, c)?;
     };
-    format_ws(buf, trailing_ws, c, c, false, true, false)
-        .inspect_err(|err| eprintln!("{err}"))
-        .ok();
-    out
+    format_ws(f, trailing_ws, c, c, false, true, false)?;
+    Ok(())
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -418,4 +406,10 @@ fn option<'a, T, D: Display>(
     } else {
         Ok(())
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("Formatting failed: {}", .0)]
+    FormattingFailed(#[from] fmt::Error),
 }
