@@ -233,15 +233,7 @@ fn ws_lead_min<F: Formattable>(
     content.format(f, c)?;
     write!(f, ",")
 }
-fn ws_followed_min<F: Formattable>(
-    f: &mut impl Write,
-    WsFollowed { content, following }: &WsFollowed<F>,
-    c: Context,
-) -> fmt::Result {
-    content.format(f, c)?;
-    format_ws_min(f, following, c)?;
-    Ok(())
-}
+
 fn ws_lead_single<F: Formattable>(
     f: &mut impl Write,
     WsLead { leading, content }: &WsLead<F>,
@@ -250,6 +242,7 @@ fn ws_lead_single<F: Formattable>(
     format_ws_single(f, leading, c)?;
     content.format(f, c)
 }
+
 fn ws_lead_nl<F: Formattable>(
     f: &mut impl Write,
     WsLead { leading, content }: &WsLead<F>,
@@ -343,7 +336,10 @@ impl Formattable for &str {
 
 impl<F: Formattable> Formattable for WsFollowed<'_, F> {
     fn format<W: Write>(&self, f: &mut W, c: Context) -> fmt::Result {
-        ws_followed_min(f, self, c)
+        let WsFollowed { content, following } = self;
+        content.format(f, c)?;
+        format_ws_min(f, following, c)?;
+        Ok(())
     }
 }
 
