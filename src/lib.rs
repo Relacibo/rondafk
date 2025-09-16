@@ -28,121 +28,6 @@ pub fn format(
     Ok(())
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-struct Indent(usize);
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-struct Context {
-    indent: Indent,
-    nl: &'static str,
-}
-
-impl Display for Indent {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{:1$}", "", self.0 * 4)
-    }
-}
-
-impl Context {
-    fn increase(mut self) -> Self {
-        self.indent.0 += 1;
-        self
-    }
-}
-
-trait Formattable {
-    fn format<W: Write>(&self, f: &mut W, c: Context) -> fmt::Result;
-}
-
-impl Formattable for Value<'_> {
-    fn format<'a, W: Write>(&self, f: &mut W, c @ Context { nl, .. }: Context) -> fmt::Result {
-        match self {
-            lit @ (Value::Int(_)
-            | Value::Float(_)
-            | Value::Bool(_)
-            | Value::Unit(_)
-            | Value::Char(_)) => {
-                write!(f, "{lit}")
-            }
-            Value::Str(s) => write!(
-                f,
-                "{}",
-                if nl == "\n" {
-                    format!("{s}").replace("\n\r", "\n")
-                } else {
-                    debug_assert_eq!(nl, "\n\r");
-                    format!("{s}").replace("\n", "\n\r")
-                }
-            ),
-            Value::List(List(list)) => {
-                write!(f, "[")?;
-                format_separated(f, list, c, false)?;
-                write!(f, "]")
-            }
-            Value::Map(Map(fields)) => {
-                write!(f, "{{")?;
-                format_separated(f, fields, c, false)?;
-                write!(f, "}}")
-            }
-            Value::Tuple(Tuple { ident, fields }) => {
-                if let Some(ident) = ident {
-                    ident.format(f, c)?;
-                };
-                write!(f, "(",)?;
-                format_separated(f, fields, c, fields.values.len() <= 1)?;
-                write!(f, ")")
-            }
-            Value::Struct(Struct { ident, fields }) => {
-                if let Some(ident) = ident {
-                    ident.format(f, c)?;
-                };
-                write!(f, "(")?;
-                format_separated(f, fields, c, false)?;
-                write!(f, ")")
-            }
-        }
-    }
-}
-
-impl Formattable for &str {
-    fn format<W: Write>(&self, f: &mut W, _: Context) -> fmt::Result {
-        write!(f, "{self}")
-    }
-}
-
-impl<F: Formattable> Formattable for WsFollowed<'_, F> {
-    fn format<W: Write>(&self, f: &mut W, c: Context) -> fmt::Result {
-        ws_followed_min(f, self, c)
-    }
-}
-
-impl Formattable for MapItem<'_> {
-    fn format<W: Write>(&self, f: &mut W, c: Context) -> fmt::Result {
-        let MapItem {
-            key,
-            after_key,
-            value,
-        } = self;
-        write!(f, "{key}",)?;
-        format_ws_min(f, after_key, c)?;
-        write!(f, ":")?;
-        ws_lead_single(f, value, c)
-    }
-}
-impl Formattable for NamedField<'_> {
-    fn format<W: Write>(&self, f: &mut W, c: Context) -> fmt::Result {
-        let NamedField {
-            key,
-            after_key,
-            value,
-        } = self;
-        write!(f, "{key}",)?;
-        format_ws_min(f, after_key, c)?;
-        write!(f, ":")?;
-        ws_lead_single(f, value, c)
-    }
-}
-
 fn format_extension(
     f: &mut impl Write,
     WsLead {
@@ -372,6 +257,121 @@ fn ws_lead_nl<F: Formattable>(
 ) -> fmt::Result {
     format_ws(f, leading, c, c, false, true, false)?;
     content.format(f, c)
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+struct Indent(usize);
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+struct Context {
+    indent: Indent,
+    nl: &'static str,
+}
+
+impl Display for Indent {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{:1$}", "", self.0 * 4)
+    }
+}
+
+impl Context {
+    fn increase(mut self) -> Self {
+        self.indent.0 += 1;
+        self
+    }
+}
+
+trait Formattable {
+    fn format<W: Write>(&self, f: &mut W, c: Context) -> fmt::Result;
+}
+
+impl Formattable for Value<'_> {
+    fn format<'a, W: Write>(&self, f: &mut W, c @ Context { nl, .. }: Context) -> fmt::Result {
+        match self {
+            lit @ (Value::Int(_)
+            | Value::Float(_)
+            | Value::Bool(_)
+            | Value::Unit(_)
+            | Value::Char(_)) => {
+                write!(f, "{lit}")
+            }
+            Value::Str(s) => write!(
+                f,
+                "{}",
+                if nl == "\n" {
+                    format!("{s}").replace("\n\r", "\n")
+                } else {
+                    debug_assert_eq!(nl, "\n\r");
+                    format!("{s}").replace("\n", "\n\r")
+                }
+            ),
+            Value::List(List(list)) => {
+                write!(f, "[")?;
+                format_separated(f, list, c, false)?;
+                write!(f, "]")
+            }
+            Value::Map(Map(fields)) => {
+                write!(f, "{{")?;
+                format_separated(f, fields, c, false)?;
+                write!(f, "}}")
+            }
+            Value::Tuple(Tuple { ident, fields }) => {
+                if let Some(ident) = ident {
+                    ident.format(f, c)?;
+                };
+                write!(f, "(",)?;
+                format_separated(f, fields, c, fields.values.len() <= 1)?;
+                write!(f, ")")
+            }
+            Value::Struct(Struct { ident, fields }) => {
+                if let Some(ident) = ident {
+                    ident.format(f, c)?;
+                };
+                write!(f, "(")?;
+                format_separated(f, fields, c, false)?;
+                write!(f, ")")
+            }
+        }
+    }
+}
+
+impl Formattable for &str {
+    fn format<W: Write>(&self, f: &mut W, _: Context) -> fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+impl<F: Formattable> Formattable for WsFollowed<'_, F> {
+    fn format<W: Write>(&self, f: &mut W, c: Context) -> fmt::Result {
+        ws_followed_min(f, self, c)
+    }
+}
+
+impl Formattable for MapItem<'_> {
+    fn format<W: Write>(&self, f: &mut W, c: Context) -> fmt::Result {
+        let MapItem {
+            key,
+            after_key,
+            value,
+        } = self;
+        write!(f, "{key}",)?;
+        format_ws_min(f, after_key, c)?;
+        write!(f, ":")?;
+        ws_lead_single(f, value, c)
+    }
+}
+impl Formattable for NamedField<'_> {
+    fn format<W: Write>(&self, f: &mut W, c: Context) -> fmt::Result {
+        let NamedField {
+            key,
+            after_key,
+            value,
+        } = self;
+        write!(f, "{key}",)?;
+        format_ws_min(f, after_key, c)?;
+        write!(f, ":")?;
+        ws_lead_single(f, value, c)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
