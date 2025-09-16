@@ -1,7 +1,4 @@
-use std::{
-    borrow::Cow,
-    fmt::{self, Debug, Display, Formatter, Write},
-};
+use std::fmt::{self, Debug, Display, Formatter, Write};
 
 use ron_edit::*;
 
@@ -183,26 +180,6 @@ fn without_trailing_nl(s: &str) -> &str {
     s.strip_suffix("\r\n").or(s.strip_suffix('\n')).unwrap_or(s)
 }
 
-fn start_with_space(s: &str) -> Cow<'_, str> {
-    if s.starts_with(char::is_whitespace) {
-        s.into()
-    } else {
-        format!(" {s}").into()
-    }
-}
-
-fn delimited_with_spaces(s: &str) -> Cow<'_, str> {
-    match (
-        s.starts_with(char::is_whitespace),
-        s.ends_with(char::is_whitespace),
-    ) {
-        (true, true) => s.into(),
-        (true, false) => format!("{s} ").into(),
-        (false, true) => format!(" {s}").into(),
-        (false, false) => format!(" {s} ").into(),
-    }
-}
-
 fn ws_inner(
     f: &mut impl Write,
     ws: &Ws,
@@ -220,15 +197,24 @@ fn ws_inner(
     };
     let res = match ws {
         Ws::LineComment(c) => {
-            write!(
-                f,
-                "{space}//{}{nl_after}{indent_after}",
-                start_with_space(without_trailing_nl(c))
-            )?;
+            write!(f, "{space}//")?;
+            let c = without_trailing_nl(c);
+            if !c.starts_with(char::is_whitespace) {
+                write!(f, " ")?;
+            }
+            write!(f, "{c}{nl_after}{indent_after}")?;
             true
         }
         Ws::BlockComment(c) => {
-            write!(f, "{space}/*{}*/", delimited_with_spaces(c))?;
+            write!(f, "{space}/*")?;
+            if !c.starts_with(char::is_whitespace) {
+                write!(f, " ")?;
+            }
+            write!(f, "{c}")?;
+            if !c.ends_with(char::is_whitespace) {
+                write!(f, " ")?;
+            }
+            write!(f, "*/")?;
             false
         }
         Ws::Space(_) => is_standalone,
