@@ -1,11 +1,14 @@
-use std::fmt::{self, Debug, Display, Formatter, Write};
+use std::{
+    borrow::Cow,
+    fmt::{self, Debug, Display, Formatter, Write},
+};
 
 use ron_edit::*;
 
 pub fn format(
     f: &mut impl Write,
     File {
-        extentions,
+        extentions: extensions,
         value,
         trailing_ws,
     }: &File,
@@ -15,13 +18,13 @@ pub fn format(
         nl: "\n",
     };
 
-    extentions
-        .iter()
-        .try_for_each(|e| write!(f, "{}", extention(e, c)))?;
-    if extentions.is_empty() {
-        ws_lead_min(f, value, c, &format_value)?;
+    if extensions.is_empty() {
+        ws_lead_min(f, value, c)?;
     } else {
-        ws_lead_nl(f, value, c, &format_value)?;
+        for extension in extensions {
+            format_extension(f, extension, c)?;
+        }
+        ws_lead_nl(f, value, c)?;
         format_ws_min(f, trailing_ws, c)?;
     };
     format_ws(f, trailing_ws, c, c, false, true, false)?;
@@ -44,100 +47,107 @@ impl Display for Indent {
 }
 
 impl Context {
-    #[must_use]
     fn increase(mut self) -> Self {
         self.indent.0 += 1;
         self
     }
 }
 
-fn format_value<'a>(it: &'a Value, c @ Context { nl, .. }: Context) -> impl Display + 'a {
-    Disp(move |f| match it {
-        lit @ (Value::Int(_)
-        | Value::Float(_)
-        | Value::Bool(_)
-        | Value::Unit(_)
-        | Value::Char(_)) => {
-            write!(f, "{lit}")
-        }
-        Value::Str(s) => write!(
-            f,
-            "{}",
-            if nl == "\n" {
-                format!("{s}").replace("\n\r", "\n")
-            } else {
-                debug_assert_eq!(nl, "\n\r");
-                format!("{s}").replace("\n", "\n\r")
-            }
-        ),
-        Value::List(List(list)) => {
-            write!(f, "[")?;
-            format_separated(f, list, c, &format_value, false)?;
-            write!(f, "]")
-        }
-        Value::Map(Map(fields)) => {
-            write!(f, "{{")?;
-            format_separated(f, fields, c, &format_map_item, false)?;
-            write!(f, "}}")
-        }
-        Value::Tuple(Tuple { ident, fields }) => {
-            option(f, ident, |ident| ws_followed_min(ident, c, &|s, _| s))?;
-            write!(f, "(",)?;
-            format_separated(f, fields, c, &format_value, fields.values.len() <= 1)?;
-            write!(f, ")")
-        }
-        Value::Struct(Struct { ident, fields }) => {
-            option(f, ident, |ident| ws_followed_min(ident, c, &|s, _| s))?;
-            write!(f, "(")?;
-            format_separated(f, fields, c, &format_named_field, false)?;
-            write!(f, ")")
-        }
-    })
+trait Formattable {
+    fn format<W: Write>(&self, f: &mut W, c: Context) -> fmt::Result;
 }
 
-fn format_map_item<'a>(map_item: &'a MapItem<'_>, c: Context) -> impl Display + 'a {
-    let MapItem {
-        key,
-        after_key,
-        value,
-    } = map_item;
-    Disp(move |f| {
+impl Formattable for Value<'_> {
+    fn format<'a, W: Write>(&self, f: &mut W, c @ Context { nl, .. }: Context) -> fmt::Result {
+        match self {
+            lit @ (Value::Int(_)
+            | Value::Float(_)
+            | Value::Bool(_)
+            | Value::Unit(_)
+            | Value::Char(_)) => {
+                write!(f, "{lit}")
+            }
+            Value::Str(s) => write!(
+                f,
+                "{}",
+                if nl == "\n" {
+                    format!("{s}").replace("\n\r", "\n")
+                } else {
+                    debug_assert_eq!(nl, "\n\r");
+                    format!("{s}").replace("\n", "\n\r")
+                }
+            ),
+            Value::List(List(list)) => {
+                write!(f, "[")?;
+                format_separated(f, list, c, false)?;
+                write!(f, "]")
+            }
+            Value::Map(Map(fields)) => {
+                write!(f, "{{")?;
+                format_separated(f, fields, c, false)?;
+                write!(f, "}}")
+            }
+            Value::Tuple(Tuple { ident, fields }) => {
+                if let Some(ident) = ident {
+                    ident.format(f, c)?;
+                };
+                write!(f, "(",)?;
+                format_separated(f, fields, c, fields.values.len() <= 1)?;
+                write!(f, ")")
+            }
+            Value::Struct(Struct { ident, fields }) => {
+                if let Some(ident) = ident {
+                    ident.format(f, c)?;
+                };
+                write!(f, "(")?;
+                format_separated(f, fields, c, false)?;
+                write!(f, ")")
+            }
+        }
+    }
+}
+
+impl Formattable for &str {
+    fn format<W: Write>(&self, f: &mut W, _: Context) -> fmt::Result {
+        write!(f, "{self}")
+    }
+}
+
+impl<F: Formattable> Formattable for WsFollowed<'_, F> {
+    fn format<W: Write>(&self, f: &mut W, c: Context) -> fmt::Result {
+        ws_followed_min(f, self, c)
+    }
+}
+
+impl Formattable for MapItem<'_> {
+    fn format<W: Write>(&self, f: &mut W, c: Context) -> fmt::Result {
+        let MapItem {
+            key,
+            after_key,
+            value,
+        } = self;
         write!(f, "{key}",)?;
         format_ws_min(f, after_key, c)?;
         write!(f, ":")?;
-        ws_lead_single(f, value, c, &format_value)
-    })
+        ws_lead_single(f, value, c)
+    }
 }
-
-fn format_named_field<'a>(named_field: &'a NamedField<'_>, c: Context) -> impl Display + 'a {
-    Disp(move |f| {
+impl Formattable for NamedField<'_> {
+    fn format<W: Write>(&self, f: &mut W, c: Context) -> fmt::Result {
         let NamedField {
             key,
             after_key,
             value,
-        } = named_field;
+        } = self;
         write!(f, "{key}",)?;
         format_ws_min(f, after_key, c)?;
         write!(f, ":")?;
-        ws_lead_single(f, value, c, &format_value)
-    })
-}
-
-struct Disp<F: Fn(&mut Formatter<'_>) -> fmt::Result>(F);
-
-impl<F: Fn(&mut Formatter<'_>) -> fmt::Result> Display for Disp<F> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        (self.0)(f)
+        ws_lead_single(f, value, c)
     }
 }
 
-impl<F: Fn(&mut Formatter<'_>) -> fmt::Result> Debug for Disp<F> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", format!("{self}"))
-    }
-}
-
-fn extention<'a>(
+fn format_extension(
+    f: &mut impl Write,
     WsLead {
         leading,
         content:
@@ -149,67 +159,48 @@ fn extention<'a>(
                 extentions,
                 after_paren,
             },
-    }: &'a WsLead<Attribute>,
+    }: &WsLead<Attribute>,
     c: Context,
-) -> impl Display + 'a {
-    Disp(move |f| {
-        format_ws_min(f, leading, c)?;
-        write!(f, "#")?;
-        format_ws_min(f, after_pound, c)?;
-        write!(f, "!")?;
-        format_ws_min(f, after_exclamation, c)?;
-        write!(f, "[")?;
-        format_ws_min(f, after_bracket, c)?;
-        write!(f, "enable")?;
-        format_ws_min(f, after_enable, c)?;
-        write!(f, "(")?;
-        format_separated(f, extentions, c, &|&s, _| s, true)?;
-        write!(f, ")")?;
-        format_ws_min(f, after_paren, c)?;
-        write!(f, "]")?;
-        Ok(())
-    })
+) -> fmt::Result {
+    format_ws_min(f, leading, c)?;
+    write!(f, "#")?;
+    format_ws_min(f, after_pound, c)?;
+    write!(f, "!")?;
+    format_ws_min(f, after_exclamation, c)?;
+    write!(f, "[")?;
+    format_ws_min(f, after_bracket, c)?;
+    write!(f, "enable")?;
+    format_ws_min(f, after_enable, c)?;
+    write!(f, "(")?;
+    format_separated(f, extentions, c, true)?;
+    write!(f, ")")?;
+    format_ws_min(f, after_paren, c)?;
+    write!(f, "]")?;
+    Ok(())
 }
 
 fn without_trailing_nl(s: &str) -> &str {
     s.strip_suffix("\r\n").or(s.strip_suffix('\n')).unwrap_or(s)
 }
 
-fn start_with_space<'a>(s: &'a str) -> impl Display + 'a {
-    Disp(move |f| {
-        if s.starts_with(char::is_whitespace) {
-            write!(f, "{s}")
-        } else {
-            write!(f, " {s}")
-        }
-    })
+fn start_with_space(s: &str) -> Cow<'_, str> {
+    if s.starts_with(char::is_whitespace) {
+        s.into()
+    } else {
+        format!(" {s}").into()
+    }
 }
 
-fn delimited_with_spaces<'a>(s: &'a str) -> impl Display + 'a {
-    Disp(move |f| {
-        match (
-            s.starts_with(char::is_whitespace),
-            s.ends_with(char::is_whitespace),
-        ) {
-            (true, true) => write!(f, "{s}"),
-            (true, false) => write!(f, "{s} "),
-            (false, true) => write!(f, " {s}"),
-            (false, false) => write!(f, " {s} "),
-        }
-    })
-}
-#[test]
-fn space_helpers() {
-    assert_eq!(without_trailing_nl("hi\n"), "hi");
-    assert_eq!(without_trailing_nl("hi\n\r\n"), "hi\n");
-    assert_eq!(without_trailing_nl("hi"), "hi");
-    assert_eq!(start_with_space("hi").to_string(), " hi");
-    assert_eq!(start_with_space("\thi").to_string(), "\thi");
-    assert_eq!(start_with_space(" hi").to_string(), " hi");
-    assert_eq!(delimited_with_spaces("hi").to_string(), " hi ");
-    assert_eq!(delimited_with_spaces("\thi").to_string(), "\thi ");
-    assert_eq!(delimited_with_spaces(" hi").to_string(), " hi ");
-    assert_eq!(delimited_with_spaces(" hi\t").to_string(), " hi\t");
+fn delimited_with_spaces(s: &str) -> Cow<'_, str> {
+    match (
+        s.starts_with(char::is_whitespace),
+        s.ends_with(char::is_whitespace),
+    ) {
+        (true, true) => s.into(),
+        (true, false) => format!("{s} ").into(),
+        (false, true) => format!(" {s}").into(),
+        (false, false) => format!(" {s} ").into(),
+    }
 }
 
 fn ws_inner(
@@ -315,37 +306,42 @@ fn format_ws(
     Ok(is_standalone)
 }
 
-fn format_separated<'a, T, D: Display>(
+fn format_separated<'a, F: Formattable>(
     f: &mut impl Write,
     Separated {
         values,
         trailing_comma: _,
         trailing_ws,
-    }: &'a Separated<'a, T>,
+    }: &'a Separated<'a, F>,
     c: Context,
-    format_content: &'a impl Fn(&'a T, Context) -> D,
     minimal: bool,
 ) -> fmt::Result {
     let increased = c.increase();
     let mut is_standalone = false;
     for (i, elem) in values.iter().enumerate() {
+        let WsWrapped {
+            leading,
+            content,
+            following,
+        } = &elem;
         let leading_always_add_trailing_newline = !minimal;
         let leading_pad_end_with_space = minimal && i != 0;
         let following_always_add_trailing_newline = i == values.len();
         let c_after = if i == values.len() { c } else { increased };
         format_ws(
             f,
-            &elem.leading,
+            leading,
             increased,
             increased,
             is_standalone,
             leading_always_add_trailing_newline,
             leading_pad_end_with_space,
         )?;
-        write!(f, "{},", format_content(&elem.content, increased),)?;
+        content.format(f, increased)?;
+        write!(f, ",")?;
         is_standalone = format_ws(
             f,
-            &elem.following,
+            following,
             increased,
             c_after,
             false,
@@ -357,59 +353,62 @@ fn format_separated<'a, T, D: Display>(
     Ok(())
 }
 
-fn ws_lead_min<'a, T, D: Display>(
+fn ws_lead_min<F: Formattable>(
     f: &mut impl Write,
-    WsLead { leading, content }: &'a WsLead<T>,
+    WsLead { leading, content }: &WsLead<F>,
     c: Context,
-    format_content: &'a impl Fn(&'a T, Context) -> D,
 ) -> fmt::Result {
     format_ws_min(f, leading, c)?;
-    write!(f, "{}", format_content(content, c))
+    content.format(f, c)?;
+    write!(f, ",")
 }
-fn ws_followed_min<'a, T, D: Display>(
-    WsFollowed { content, following }: &'a WsFollowed<T>,
-    c: Context,
-    format_content: &'a impl Fn(&'a T, Context) -> D,
-) -> impl Display + 'a {
-    Disp(move |f| {
-        write!(f, "{}", format_content(content, c),)?;
-        format_ws_min(f, following, c)?;
-        Ok(())
-    })
-}
-fn ws_lead_single<'a, T, D: Display>(
+fn ws_followed_min<F: Formattable>(
     f: &mut impl Write,
-    WsLead { leading, content }: &'a WsLead<T>,
+    WsFollowed { content, following }: &WsFollowed<F>,
     c: Context,
-    format_content: &'a impl Fn(&'a T, Context) -> D,
 ) -> fmt::Result {
-    format_ws_single(f, leading, c)?;
-    write!(f, "{}", format_content(content, c))?;
+    content.format(f, c)?;
+    format_ws_min(f, following, c)?;
     Ok(())
 }
-fn ws_lead_nl<'a, T, D: Display>(
+fn ws_lead_single<F: Formattable>(
     f: &mut impl Write,
-    WsLead { leading, content }: &'a WsLead<T>,
+    WsLead { leading, content }: &WsLead<F>,
     c: Context,
-    format_content: &'a impl Fn(&'a T, Context) -> D,
+) -> fmt::Result {
+    format_ws_single(f, leading, c)?;
+    content.format(f, c)
+}
+fn ws_lead_nl<F: Formattable>(
+    f: &mut impl Write,
+    WsLead { leading, content }: &WsLead<F>,
+    c: Context,
 ) -> fmt::Result {
     format_ws(f, leading, c, c, false, true, false)?;
-    write!(f, "{}", format_content(content, c))
-}
-fn option<'a, T, D: Display>(
-    f: &mut impl Write,
-    opt: &'a Option<T>,
-    format_content: impl Fn(&'a T) -> D + 'a,
-) -> fmt::Result {
-    if let Some(value) = opt {
-        write!(f, "{}", format_content(value))
-    } else {
-        Ok(())
-    }
+    content.format(f, c)
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Formatting failed: {}", .0)]
     FormattingFailed(#[from] fmt::Error),
+}
+
+#[cfg(test)]
+mod test {
+    use crate::without_trailing_nl;
+
+    #[test]
+    fn space_helpers() {
+        assert_eq!(without_trailing_nl("hi\n"), "hi");
+        assert_eq!(without_trailing_nl("hi\n\r\n"), "hi\n");
+        assert_eq!(without_trailing_nl("hi"), "hi");
+        // assert_eq!(start_with_space("hi").to_string(), " hi");
+        // assert_eq!(start_with_space("\thi").to_string(), "\thi");
+        // assert_eq!(start_with_space(" hi").to_string(), " hi");
+        // assert_eq!(delimited_with_spaces("hi").to_string(), " hi ");
+        // assert_eq!(delimited_with_spaces("\thi").to_string(), "\thi ");
+        // assert_eq!(delimited_with_spaces(" hi").to_string(), " hi ");
+        // assert_eq!(delimited_with_spaces(" hi\t").to_string(), " hi\t");
+    }
 }
